@@ -1,0 +1,23 @@
+const adminDb = db.getSiblingDB("admin");
+const auth = adminDb.auth(
+  "{{ mongodb_admin_user }}",
+  "{{ mongodb_admin_password }}"
+);
+
+if (!auth) {
+  throw new Error("MongoDB administrator authentication failed");
+}
+
+const appDb = db.getSiblingDB("{{ mongodb_app_database }}");
+const existing = appDb.getUser("{{ mongodb_app_user }}");
+
+if (existing === null) {
+  appDb.createUser({
+    user: "{{ mongodb_app_user }}",
+    pwd: "{{ mongodb_app_password }}",
+    roles: [{ role: "readWrite", db: "{{ mongodb_app_database }}" }]
+  });
+  print("TravelMemory application user created.");
+} else {
+  print("TravelMemory application user already exists.");
+}

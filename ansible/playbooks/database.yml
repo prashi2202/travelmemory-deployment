@@ -1,0 +1,157 @@
+
+---
+- name: Install MongoDB on the private database server
+  hosts: travelmemory_db
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../group_vars/travelmemory_db/vars.yml
+
+  tasks:
+    - name: Install prerequisite packages
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create keyring directory
+      ansible.builtin.file:
+        path: /usr/share/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Download MongoDB signing key
+      ansible.builtin.shell: |
+        set -o pipefail
+        curl -fsSL https://pgp.mongodb.com/server-8.0.asc |
+          gpg --dearmor --yes -o /usr/share/keyrings/mongodb-server-8.0.gpg
+      args:
+        executable: /bin/bash
+        creates: /usr/share/keyrings/mongodb-server-8.0.gpg
+
+    - name: Configure MongoDB repository for Ubuntu 24.04
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg]
+          https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse
+        filename: mongodb-org-8.0
+        state: present
+
+    - name: Install MongoDB
+      ansible.builtin.apt:
+        name: mongodb-org
+        state: present
+        update_cache: true
+
+    - name: Configure MongoDB to listen on its private interface
+      ansible.builtin.lineinfile:
+        path: /etc/mongod.conf
+        regexp: '^\s*bindIp:'
+        line: '  bindIp: 127.0.0.1,172.31.93.129'
+        insertafter: '^net:'
+    
+    - name: Enable MongoDB authorization
+      ansible.builtin.blockinfile:
+        path: /etc/mongod.conf
+        marker: "# {mark} ANSIBLE MANAGED AUTHORIZATION"
+        block: |
+          security:
+            authorization: enabled
+        insertafter: EOF
+
+    - name: Configure MongoDB kernel compatibility workaround
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mongod.service.d/rseq.conf
+        content: |
+          [Service]
+          Environment=GLIBC_TUNABLES=glibc.pthread.rseq=1
+        owner: root
+        group: root
+        mode: "0644"
+      register: mongod_override
+
+    - name: Reload systemd when MongoDB override changes
+      ansible.builtin.systemd:
+        daemon_reload: true
+      when: mongod_override.changed
+
+    - name: Enable and start MongoDB
+      ansible.builtin.systemd:
+        name: mongod
+        enabled: true
+        state: restarted
+
+    - name: Verify MongoDB service
+      ansible.builtin.command: systemctl is-active mongod
+      register: mongodb_status
+      changed_when: false
+      failed_when: mongodb_status.stdout != "active"
+
+    - name: Display MongoDB status
+      ansible.builtin.debug:
+        var: mongodb_status.stdout
+
+    - name: Render temporary MongoDB application-user script
+      ansible.builtin.template:
+        src: ../templates/mongodb-create-app-user.js.j2
+        dest: /tmp/mongodb-create-app-user.js
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Create MongoDB application user
+      ansible.builtin.command:
+        argv:
+          - mongosh
+          - --quiet
+          - --host
+          - 127.0.0.1
+          - --file
+          - /tmp/mongodb-create-app-user.js
+      register: mongodb_app_user_result
+      changed_when: "'TravelMemory application user created.' in mongodb_app_user_result.stdout"
+      no_log: true
+
+    - name: Remove temporary MongoDB application-user script
+      ansible.builtin.file:
+        path: /tmp/mongodb-create-app-user.js
+        state: absent
+      no_log: true
+
+    - name: Render temporary application authentication test
+      ansible.builtin.template:
+        src: ../templates/mongodb-verify-app-auth.js.j2
+        dest: /tmp/mongodb-verify-app-auth.js
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Verify MongoDB application authentication
+      ansible.builtin.command:
+        argv:
+          - mongosh
+          - --quiet
+          - --host
+          - 127.0.0.1
+          - --file
+          - /tmp/mongodb-verify-app-auth.js
+      register: mongodb_app_auth_test
+      changed_when: false
+      no_log: true
+
+    - name: Display application authentication result
+      ansible.builtin.debug:
+        msg: "MongoDB application authentication verified successfully."
+      when: "'APPLICATION_AUTHENTICATION_SUCCESS' in mongodb_app_auth_test.stdout"
+
+    - name: Remove temporary authentication test
+      ansible.builtin.file:
+        path: /tmp/mongodb-verify-app-auth.js
+        state: absent
+      no_log: true

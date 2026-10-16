@@ -1,0 +1,13 @@
+const adminDb = db.getSiblingDB("admin");
+const existing = adminDb.getUser("{{ mongodb_admin_user }}");
+
+if (existing === null) {
+  adminDb.createUser({
+    user: "{{ mongodb_admin_user }}",
+    pwd: "{{ mongodb_admin_password }}",
+    roles: [{ role: "root", db: "admin" }]
+  });
+  print("MongoDB administrator created.");
+} else {
+  print("MongoDB administrator already exists; no changes made.");
+}

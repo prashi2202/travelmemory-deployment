@@ -1,0 +1,19 @@
+const appDb = db.getSiblingDB("{{ mongodb_app_database }}");
+
+const authenticated = appDb.auth(
+  "{{ mongodb_app_user }}",
+  "{{ mongodb_app_password }}"
+);
+
+if (!authenticated) {
+  throw new Error("MongoDB application authentication failed");
+}
+
+const result = appDb.runCommand({ ping: 1 });
+
+if (result.ok !== 1) {
+  throw new Error("MongoDB application database ping failed");
+}
+
+print("APPLICATION_AUTHENTICATION_SUCCESS");
+printjson(result);
