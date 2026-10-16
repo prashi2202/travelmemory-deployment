@@ -16,7 +16,7 @@ The deployment consists of:
 - Terraform for infrastructure provisioning.
 - Ansible for repeatable application and database configuration.
 
-See `docs/architecture.drawio` for the editable architecture diagram.
+![TravelMemory AWS Architecture](docs/15.TravelMemoryArchitecture.png)
 
 ## Technology Stack
 
