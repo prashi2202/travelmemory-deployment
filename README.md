@@ -1,36 +1,56 @@
-# TravelMemory — AWS Deployment with Terraform and Ansible
+# TravelMemory — AWS Deployment Project
 
-## Project Overview
+## Project Summary
 
-This project deploys the TravelMemory MERN application on AWS. Terraform provisions the infrastructure, and Ansible configures MongoDB, deploys the application, and configures Nginx.
+This project demonstrates the deployment of the TravelMemory MERN application on AWS using Terraform for infrastructure provisioning and Ansible for configuration management and application deployment.
 
-## Architecture
+**The AWS infrastructure and application deployment were completed and verified.** The only assignment item not implemented is the custom-domain integration through Cloudflare. The application was tested through the AWS Application Load Balancer (ALB) DNS endpoint.
 
-The deployment consists of:
+## Completion Status
 
-- An internet-facing AWS Application Load Balancer (ALB).
+| Assignment area | Status | Result |
+|---|---|---|
+| AWS infrastructure provisioning with Terraform | Completed | EC2 instances, networking, security groups, NAT Gateway and ALB provisioned |
+| MongoDB configuration | Completed | MongoDB installed on a private EC2 instance; authentication configured and verified |
+| Application deployment with Ansible | Completed | React frontend, Node.js/Express backend and Nginx configured on two application instances |
+| Load balancing | Completed | Both application instances registered and healthy in the ALB target group |
+| Application validation | Completed | Frontend and API endpoints returned successful responses; database connectivity verified |
+| Architecture and evidence documentation | Completed | Architecture diagram, deployment notes and evidence screenshots prepared |
+| Cloudflare custom-domain integration | Pending | No custom domain or Cloudflare DNS records were configured |
+
+## AWS Architecture
+
+![TravelMemory AWS Deployment Architecture](docs/TravelMemoryArchitecture.png)
+
+Editable source: [docs/architecture.drawio](docs/architecture.drawio)
+
+The deployed architecture consists of:
+
+- An internet-facing AWS Application Load Balancer listening on HTTP port 80.
 - Two application EC2 instances in separate Availability Zones.
-- Nginx serving the React frontend and reverse-proxying API requests to Node.js.
+- Nginx serving the React frontend and proxying API requests to Node.js/Express on port 3000.
 - A private MongoDB EC2 instance with authentication enabled.
-- AWS Systems Manager (SSM) for administration and Ansible connectivity.
-- Terraform for infrastructure provisioning.
-- Ansible for repeatable application and database configuration.
+- Security groups limiting application access to the ALB and database access to the application tier.
+- AWS Systems Manager (SSM) for administrative access and Ansible connectivity.
+- Terraform for infrastructure provisioning and Ansible for repeatable configuration and deployment.
+- A NAT Gateway to provide outbound internet access for private resources.
 
-![TravelMemory AWS Architecture](docs/15.TravelMemoryArchitecture.png)
+The Cloudflare custom-domain path is intentionally not shown as active because it was not configured during this project.
 
 ## Technology Stack
 
-| Component | Technology |
+| Area | Technology |
 |---|---|
+| Cloud platform | Amazon Web Services (AWS) |
 | Infrastructure as Code | Terraform |
 | Configuration management | Ansible |
-| Cloud platform | AWS |
-| Application frontend | React |
-| Application backend | Node.js, Express |
+| Frontend | React |
+| Backend | Node.js and Express |
 | Database | MongoDB |
-| Web server and reverse proxy | Nginx |
-| Administration | AWS Systems Manager |
+| Web server / reverse proxy | Nginx |
 | Load balancing | AWS Application Load Balancer |
+| Administration | AWS Systems Manager (SSM) |
+| Secrets management | Ansible Vault |
 
 ## Repository Structure
 
@@ -42,6 +62,7 @@ The deployment consists of:
 │   ├── playbooks/
 │   └── templates/
 ├── docs/
+│   ├── architecture.png
 │   ├── architecture.drawio
 │   ├── deployment-notes.md
 │   └── evidence/
@@ -54,104 +75,81 @@ The deployment consists of:
 └── README.md
 ```
 
-Terraform state files, variable files containing local configuration, provider working directories, and backup files must not be committed.
+Terraform state files, local variable files, provider working directories, backups, private keys and plaintext secrets are excluded from version control.
 
-## Prerequisites
+## Implementation Summary
 
-- AWS CLI configured with suitable permissions.
-- Terraform installed.
-- Python and Ansible installed in a virtual environment.
-- The `amazon.aws` Ansible collection.
-- AWS Systems Manager connectivity and appropriate IAM permissions.
-- An Ansible Vault password for the encrypted database variables.
-- A local checkout of the TravelMemory application source.
+### 1. Infrastructure provisioning
 
-## Deployment Workflow
+Terraform was used to provision the AWS infrastructure required by the application, including:
 
-### 1. Provision AWS infrastructure
+- Application EC2 instances in separate Availability Zones.
+- A private database EC2 instance.
+- A restricted administration/jump-host instance.
+- Application, database and ALB security groups.
+- Private subnets and route-table associations.
+- A NAT Gateway and Elastic IP.
+- An internet-facing Application Load Balancer, listener and target group.
 
-From the `terraform` directory, initialize Terraform and review the proposed changes before applying them:
+The deployment used the AWS default VPC with CIDR `172.31.0.0/16` and the `ap-south-1` region.
 
-```bash
-terraform init
-terraform validate
-terraform plan
-```
+### 2. Database configuration
 
-Review the plan carefully before running `terraform apply`. Never commit Terraform state files or secret variable files.
+Ansible configured MongoDB on the private database instance. MongoDB authentication was enabled, and the application database user was configured. The application connection string was managed through encrypted Ansible Vault variables rather than committed as plaintext.
 
-### 2. Configure Ansible
+### 3. Application deployment
 
-The inventory is located at:
+Ansible deployed the backend and frontend to both application instances. The backend runs as a systemd service, while Nginx serves the React build and proxies API requests to the Node.js/Express backend.
 
-`ansible/inventory/ssm.ini`
+The application instances are accessed through the ALB rather than being directly exposed to public inbound HTTP traffic.
 
-The inventory connects to EC2 instances through AWS Systems Manager. Database credentials are stored in the encrypted Ansible Vault variables file:
+### 4. Administrative access
 
-`ansible/group_vars/travelmemory_db/vars.yml`
+AWS Systems Manager was used for administration and Ansible connectivity. Ansible Vault was used to protect sensitive database configuration.
 
-Supply the Vault password interactively when prompted. Do not store the Vault password in the repository.
+## Validation Results
 
-### 3. Deploy MongoDB
+The following checks were completed successfully during deployment:
 
-The database playbook is:
-
-`ansible/playbooks/database.yml`
-
-It configures MongoDB, enables authentication, and provisions the application database user.
-
-### 4. Deploy the application
-
-Build the frontend from the TravelMemory source checkout, then deploy the application with:
-
-```bash
-export ANSIBLE_COLLECTIONS_PATH="$HOME/.ansible/collections:/usr/lib/python3/dist-packages/ansible_collections:/usr/share/ansible/collections"
-
-~/venvs/travelmemory-ansible/bin/ansible-playbook \
-  -i ansible/inventory/ssm.ini \
-  ansible/playbooks/application.yml \
-  --ask-vault-pass
-```
-
-The application playbook installs Node.js and Nginx, deploys the backend and frontend, configures the backend environment, and enables the relevant system services.
-
-## Verification
-
-The deployment was verified with the following checks:
-
-- Both application instances reported healthy in the ALB target group.
-- The backend `/hello` endpoint returned HTTP 200.
-- The frontend `/` endpoint returned HTTP 200.
-- The trip API `/trip` returned HTTP 200 with an empty JSON array.
+- Both application instances were reported healthy in the ALB target group.
+- The ALB frontend endpoint returned HTTP 200.
+- The `/hello` backend endpoint returned HTTP 200.
+- The `/trip` API returned HTTP 200 with an empty JSON array.
 - A direct MongoDB connection and administrative ping from App A succeeded.
 - Both application backend systemd services were active.
 - MongoDB authentication was configured and verified.
 
-An empty response from `/trip` indicates that no trip records were returned. It does not mean the application contains seeded sample data.
+The empty `/trip` response indicates that the API returned no trip records at the time of testing; it does not indicate seeded sample data.
 
-## Evidence
+## Evidence and Documentation
 
-Screenshots documenting infrastructure provisioning, SSM connectivity, MongoDB configuration, application deployment, ALB health, and frontend access are stored in `docs/evidence/`.
+Screenshots covering Terraform provisioning, SSM connectivity, MongoDB configuration, application deployment, ALB target health and frontend access are stored in `docs/evidence/`.
 
-## Security Notes
+The architecture diagram is available as both a PNG image and an editable draw.io source file.
 
-- Keep `terraform.tfstate`, `terraform.tfvars`, plaintext environment files, private keys, and Vault passwords out of version control.
-- Commit the encrypted Ansible Vault file only; never commit decrypted credentials.
-- Restrict security-group access to the required sources and ports.
-- Use SSM for administration where possible instead of exposing SSH broadly.
-- Review IAM permissions before deployment.
-- The current application endpoint uses HTTP. Configure HTTPS before treating this deployment as production-ready.
+## Cloudflare Custom-Domain Integration — Pending
 
-## DNS
+The application was verified using the ALB DNS endpoint. A custom domain was not connected through Cloudflare, and DNS records were not created.
 
-Custom-domain DNS configuration is a separate step. Do not consider Cloudflare configured until the required DNS records have been created and verified.
+For this deployment, the recommended public destination is the ALB DNS endpoint. The application EC2 instances use private IP addresses, so a public A record must not point directly to a private EC2 IP address. A custom-domain implementation would use a CNAME to the ALB hostname (or Cloudflare CNAME flattening for the zone apex), with HTTPS configured before production use.
+
+This is the only identified assignment component left unimplemented.
+
+## Security Considerations
+
+- Terraform state and local `.tfvars` files are not committed.
+- Sensitive database configuration is stored in encrypted Ansible Vault variables.
+- MongoDB is in a private subnet and accepts application database traffic on port 27017 only from the application security group.
+- Application HTTP access is intended to come through the ALB.
+- Administrative access is restricted; SSM is used where configured.
+- The demonstrated ALB endpoint uses HTTP. HTTPS and custom-domain configuration remain outside the completed scope.
 
 ## Cost and Cleanup
 
-AWS resources such as EC2 instances, NAT Gateways, and load balancers can incur charges while running.
+EC2 instances, NAT Gateways, Elastic IPs and load balancers can incur AWS charges while running. The deployment evidence and documentation should be retained independently of the live AWS resources.
 
-When the demonstration is complete, review the Terraform destroy plan and all manually created resources before cleanup. Do not destroy resources until you have saved the required evidence and confirmed that the environment is no longer needed.
+The Terraform destroy plan was reviewed and showed 22 resources to destroy. Before considering cleanup complete, verify the result in AWS and separately check for manually created resources that Terraform does not manage, including the SSM IAM role/instance profile and the Ansible SSM transfer bucket. The default VPC and unrelated shared resources must not be deleted.
 
 ## Submission
 
-The repository should include the Terraform configuration, Ansible playbooks and templates, architecture diagram, deployment notes, and evidence screenshots. Submit the final GitHub repository URL through the required Vlearn submission process.
+This repository contains the Terraform configuration, Ansible playbooks and templates, architecture documentation, deployment notes and evidence screenshots for the completed AWS deployment. The Cloudflare custom-domain integration is explicitly documented as pending.
